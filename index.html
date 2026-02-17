@@ -95,6 +95,15 @@ grist.onRecord((record) => {
 });
 
 async function render(records) {
+   console.log('render called, records:', records?.length);
+  const tokenInfo = await getToken();
+  console.log('token ok:', !!tokenInfo.token);
+  
+  if (records?.length) {
+    const first = grist.mapColumnNames(records[0]);
+    console.log('mapColumnNames result:', first);
+    console.log('raw record keys:', Object.keys(records[0]));
+   
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
   allCards = [];
