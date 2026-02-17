@@ -45,9 +45,7 @@
     opacity: 0; transition: opacity .3s;
   }
   .img-wrap img.loaded { opacity: 1; }
-  .fallback {
-    font-size: 52px; color: #bbb; user-select: none;
-  }
+  .fallback { font-size: 52px; color: #bbb; user-select: none; }
 
   .info { padding: 10px 12px; }
   .name {
@@ -58,7 +56,6 @@
     font-size: 12px; color: #888; margin-top: 2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-
   .empty {
     grid-column: 1 / -1; text-align: center;
     padding: 60px 20px; color: #aaa; font-size: 15px;
@@ -86,8 +83,7 @@ let allCards = [];
 let selectedRowId = null;
 
 async function getToken() {
-  const info = await grist.docApi.getAccessToken({readOnly: true});
-  return info; // {token, baseUrl}
+  return await grist.docApi.getAccessToken({readOnly: true});
 }
 
 grist.onRecord((record) => {
@@ -114,15 +110,8 @@ async function render(records) {
     seen.add(r.id);
     const row = grist.mapColumnNames(r);
     if (!row) continue;
-
-    // photo may be null/empty — still show card with fallback
     const attachIds = (row.photo && Array.isArray(row.photo)) ? row.photo : [];
-    allCards.push({
-      rowId: r.id,
-      name: row.name || '',
-      meta: row.meta || '',
-      attachIds,
-    });
+    allCards.push({ rowId: r.id, name: row.name || '', meta: row.meta || '', attachIds });
   }
 
   await applyFilter(document.getElementById('search').value);
@@ -140,8 +129,7 @@ async function applyFilter(query) {
     return;
   }
 
-  // Single fresh token for this render pass
-  let tokenInfo = await getToken();
+  const tokenInfo = await getToken();
 
   for (const c of filtered) {
     const card = document.createElement('div');
@@ -149,7 +137,6 @@ async function applyFilter(query) {
     card.dataset.rowId = c.rowId;
     card.onclick = () => grist.setCursorPos({rowId: c.rowId});
 
-    // Always render fallback; overlay image on top if attachment exists
     card.innerHTML = `
       <div class="img-wrap">
         <div class="fallback">👤</div>
@@ -165,10 +152,7 @@ async function applyFilter(query) {
       const img = card.querySelector('img');
       let retried = false;
 
-      async function loadImg(tok) {
-        img.src = `${tok.baseUrl}/attachments/${c.attachIds[0]}/download?auth=${tok.token}`;
-      }
-
+      // Handlers MUST be attached before setting src
       img.onload = () => {
         img.classList.add('loaded');
       };
@@ -176,16 +160,14 @@ async function applyFilter(query) {
         if (!retried) {
           retried = true;
           try {
-            tokenInfo = await getToken(); // refresh token
-            await loadImg(tokenInfo);
-          } catch {
-            // leave fallback visible
-          }
+            const fresh = await getToken();
+            img.src = `${fresh.baseUrl}/attachments/${c.attachIds[0]}/download?auth=${fresh.token}`;
+          } catch { /* fallback stays */ }
         }
-        // if retry also fails, fallback emoji stays visible — do nothing
       };
 
-      await loadImg(tokenInfo);
+      // Set src LAST
+      img.src = `${tokenInfo.baseUrl}/attachments/${c.attachIds[0]}/download?auth=${tokenInfo.token}`;
     }
 
     grid.appendChild(card);
@@ -194,10 +176,8 @@ async function applyFilter(query) {
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 document.getElementById('search').addEventListener('input', e => applyFilter(e.target.value));
