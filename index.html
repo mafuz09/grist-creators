@@ -63,7 +63,17 @@ async function render(records){
  const grid=document.getElementById('grid');
  grid.innerHTML='';
 
+async function render(records){
+
+ const grid=document.getElementById('grid');
+ grid.innerHTML='';
+
+ const seen=new Set();
+
  for(const r of records){
+
+   if(seen.has(r.id)) continue;
+   seen.add(r.id);
 
    const row=grist.mapColumnNames(r);
    const list=row.photo;
@@ -84,6 +94,7 @@ async function render(records){
    grid.appendChild(card);
  }
 }
+
 
 grist.onRecords(render);
 
