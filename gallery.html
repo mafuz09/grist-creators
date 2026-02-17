@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+
+<style>
+body {margin:0;background:#f2f2f2;font-family:system-ui}
+
+.grid{
+ display:grid;
+ grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+ gap:14px;
+ padding:14px;
+}
+
+.card{
+ background:white;
+ border-radius:12px;
+ overflow:hidden;
+ box-shadow:0 3px 8px rgba(0,0,0,.12);
+ cursor:pointer;
+ transition:.15s;
+}
+
+.card:hover{transform:translateY(-2px)}
+
+.card img{
+ width:100%;
+ height:230px;
+ object-fit:cover;
+ background:#ddd;
+}
+
+.name{
+ padding:10px;
+ font-weight:600;
+ font-size:14px;
+}
+</style>
+</head>
+<body>
+
+<div id="grid" class="grid"></div>
+
+<script>
+
+grist.ready({
+ requiredAccess:'read table',
+ columns:[
+   {name:'photo', title:'Creator DP', type:'Attachments'},
+   {name:'name', title:'Creator Name', type:'Text', optional:true}
+ ]
+});
+
+async function getUrl(id){
+ const {token, baseUrl}=await grist.docApi.getAccessToken({readOnly:true});
+ return `${baseUrl}/attachments/${id}/download?auth=${token}`;
+}
+
+async function render(records){
+
+ const grid=document.getElementById('grid');
+ grid.innerHTML='';
+
+ for(const r of records){
+
+   const row=grist.mapColumnNames(r);
+   const list=row.photo;
+   if(!list || !list.length) continue;
+
+   const url=await getUrl(list[0]);
+
+   const card=document.createElement('div');
+   card.className='card';
+
+   card.onclick=()=>grist.setCursorPos(r.id);
+
+   card.innerHTML=`
+     <img src="${url}">
+     <div class="name">${row.name||''}</div>
+   `;
+
+   grid.appendChild(card);
+ }
+}
+
+grist.onRecords(render);
+
+</script>
+</body>
+</html>
