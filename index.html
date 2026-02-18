@@ -4,277 +4,78 @@
 <meta charset="utf-8" />
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
-  *, *::before, *::after { box-sizing: border-box; }
-  body { margin: 0; background: #f0f0f3; font-family: system-ui, sans-serif; }
-
-  .toolbar {
-    position: sticky; top: 0; z-index: 10;
-    background: #f0f0f3; padding: 10px 14px;
-    border-bottom: 1px solid #ddd;
-  }
-  .toolbar input {
-    width: 100%; padding: 8px 12px; border-radius: 8px;
-    border: 1px solid #ccc; font-size: 14px; outline: none;
-    background: white;
-  }
-  .toolbar input:focus { border-color: #888; }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 14px; padding: 14px;
-  }
-
-  .card {
-    background: white; border-radius: 12px; overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0,0,0,.1); cursor: pointer;
-    transition: transform .15s, box-shadow .15s;
-    border: 2px solid transparent;
-  }
-  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.15); }
-  .card.selected { border-color: #4a90d9; box-shadow: 0 0 0 3px rgba(74,144,217,.25); }
-
-  .img-wrap {
-    width: 100%; height: 230px; background: #e0e0e0;
-    position: relative; overflow: hidden;
-  }
-  .img-wrap img {
-    width: 100%; height: 100%; object-fit: cover;
-    transition: opacity .3s; opacity: 0;
-  }
-  .img-wrap img.loaded { opacity: 1; }
-  .img-wrap .fallback {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 48px; color: #aaa; background: #e8e8e8;
-  }
-
-  .info { padding: 10px 12px; }
-  .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .meta { font-size: 12px; color: #888; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  .empty { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: #aaa; font-size: 15px; }
-
-  /* Modal */
-  .modal-overlay {
-    display: none; position: fixed; inset: 0; z-index: 100;
-    background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
-    align-items: center; justify-content: center;
-  }
-  .modal-overlay.open { display: flex; }
-  .modal {
-    background: white; border-radius: 16px; overflow: hidden;
-    max-width: 420px; width: 90%; max-height: 90vh;
-    box-shadow: 0 20px 60px rgba(0,0,0,.4);
-    display: flex; flex-direction: column;
-    animation: popIn .2s ease;
-  }
-  @keyframes popIn {
-    from { transform: scale(.92); opacity: 0; }
-    to   { transform: scale(1);   opacity: 1; }
-  }
-  .modal-img {
-    width: 100%; height: 320px; object-fit: cover;
-    background: #e8e8e8;
-  }
-  .modal-img.fallback-modal {
-    display: flex; align-items: center; justify-content: center;
-    font-size: 80px; color: #bbb;
-  }
-  .modal-body { padding: 20px; overflow-y: auto; }
-  .modal-name { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
-  .modal-meta { font-size: 14px; color: #888; margin-bottom: 16px; }
-  .modal-actions { display: flex; gap: 8px; }
-  .btn {
-    flex: 1; padding: 10px; border: none; border-radius: 8px;
-    font-size: 14px; font-weight: 600; cursor: pointer;
-  }
-  .btn-primary { background: #4a90d9; color: white; }
-  .btn-primary:hover { background: #357abd; }
-  .btn-secondary { background: #f0f0f3; color: #333; }
-  .btn-secondary:hover { background: #e0e0e3; }
-  .modal-close {
-    position: absolute; top: 12px; right: 12px;
-    width: 32px; height: 32px; border-radius: 50%;
-    border: none; background: rgba(0,0,0,.4); color: white;
-    font-size: 16px; cursor: pointer; display: flex;
-    align-items: center; justify-content: center;
-    z-index: 10;
-  }
-  .modal-close:hover { background: rgba(0,0,0,.6); }
-  .modal-header { position: relative; }
+body {margin:0;background:#f2f2f2;font-family:system-ui}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:14px;
+  padding:14px;
+}
+.card{
+  background:white;
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 3px 8px rgba(0,0,0,.12);
+  cursor:pointer;
+  transition:.15s;
+}
+.card:hover{transform:translateY(-2px)}
+.card img{
+  width:100%;
+  height:230px;
+  object-fit:cover;
+  background:#ddd;
+}
+.name{
+  padding:10px;
+  font-weight:600;
+  font-size:14px;
+}
 </style>
 </head>
 <body>
-
-<div class="toolbar">
-  <input type="search" id="search" placeholder="Search creators…" />
-</div>
 <div id="grid" class="grid"></div>
-
-<!-- Modal -->
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal" id="modal">
-    <div class="modal-header">
-      <div id="modalImgWrap"></div>
-      <button class="modal-close" id="modalClose">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-name" id="modalName"></div>
-      <div class="modal-meta" id="modalMeta"></div>
-      <div class="modal-actions">
-        <button class="btn btn-primary" id="modalGoTo">Open Record</button>
-        <button class="btn btn-secondary" id="modalCancel">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
 grist.ready({
   requiredAccess: 'read table',
   columns: [
-    {name: 'photo', title: 'Creator DP',   type: 'Attachments'},
-    {name: 'name',  title: 'Creator Name', type: 'Text', optional: true},
-    {name: 'meta',  title: 'Subtitle',     type: 'Text', optional: true},
+    {name: 'photo', title: 'Creator DP', type: 'Attachments'},
+    {name: 'name', title: 'Creator Name', type: 'Text', optional: true}
   ]
-});
-
-let allCards = [];
-let selectedRowId = null;
-let currentModalRowId = null;
-
-// Modal elements
-const overlay   = document.getElementById('modalOverlay');
-const modalName = document.getElementById('modalName');
-const modalMeta = document.getElementById('modalMeta');
-const modalImgWrap = document.getElementById('modalImgWrap');
-
-function openModal(c) {
-  currentModalRowId = c.rowId;
-  modalName.textContent = c.name || '—';
-  modalMeta.textContent = c.meta || '';
-  modalImgWrap.innerHTML = '';
-
-  if (c.url) {
-    const img = document.createElement('img');
-    img.className = 'modal-img';
-    img.src = c.url;
-    img.alt = c.name;
-    img.onerror = () => {
-      modalImgWrap.innerHTML = `<div class="modal-img fallback-modal">👤</div>`;
-    };
-    modalImgWrap.appendChild(img);
-  } else {
-    modalImgWrap.innerHTML = `<div class="modal-img fallback-modal">👤</div>`;
-  }
-
-  overlay.classList.add('open');
-}
-
-function closeModal() {
-  overlay.classList.remove('open');
-  currentModalRowId = null;
-}
-
-document.getElementById('modalClose').onclick = closeModal;
-document.getElementById('modalCancel').onclick = closeModal;
-overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
-
-document.getElementById('modalGoTo').onclick = () => {
-  if (currentModalRowId) {
-    grist.setCursorPos({rowId: currentModalRowId});
-    grist.setSelectedRows([currentModalRowId]);
-  }
-  closeModal();
-};
-
-// Keyboard close
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
-});
-
-grist.onRecord((record) => {
-  if (!record) return;
-  selectedRowId = record.id;
-  document.querySelectorAll('.card').forEach(c =>
-    c.classList.toggle('selected', +c.dataset.rowId === selectedRowId)
-  );
 });
 
 async function render(records) {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
-  allCards = [];
 
-  if (!records || !records.length) {
-    grid.innerHTML = '<div class="empty">No records found.</div>';
-    return;
-  }
+  if (!records || !records.length) return;
 
+  // Fetch token once for the whole render pass
   const {token, baseUrl} = await grist.docApi.getAccessToken({readOnly: true});
-  const seen = new Set();
 
+  const seen = new Set();
   for (const r of records) {
     if (seen.has(r.id)) continue;
     seen.add(r.id);
+
     const row = grist.mapColumnNames(r);
     if (!row || !row.photo || !row.photo.length) continue;
-    const url = `${baseUrl}/attachments/${row.photo[0]}/download?auth=${token}`;
-    allCards.push({rowId: r.id, name: row.name || '', meta: row.meta || '', url});
-  }
 
-  applyFilter(document.getElementById('search').value);
-}
+    const attachId = row.photo[0];
+    const url = `${baseUrl}/attachments/${attachId}/download?auth=${token}`;
 
-function applyFilter(query) {
-  const grid = document.getElementById('grid');
-  grid.innerHTML = '';
-  const q = query.trim().toLowerCase();
-  const filtered = q ? allCards.filter(c => c.name.toLowerCase().includes(q)) : allCards;
-
-  if (!filtered.length) {
-    grid.innerHTML = '<div class="empty">No creators match your search.</div>';
-    return;
-  }
-
-  for (const c of filtered) {
     const card = document.createElement('div');
-    card.className = 'card' + (c.rowId === selectedRowId ? ' selected' : '');
-    card.dataset.rowId = c.rowId;
-
-    card.onclick = () => {
-      grist.setCursorPos({rowId: c.rowId});
-      openModal(c);
-    };
-
+    card.className = 'card';
+    card.onclick = () => grist.setCursorPos({rowId: r.id});
     card.innerHTML = `
-      <div class="img-wrap">
-        <div class="fallback">👤</div>
-        <img src="${c.url}" alt="${c.name}">
-      </div>
-      <div class="info">
-        <div class="name">${escHtml(c.name) || '—'}</div>
-        ${c.meta ? `<div class="meta">${escHtml(c.meta)}</div>` : ''}
-      </div>
+      <img src="${url}" alt="${row.name || ''}">
+      <div class="name">${row.name || ''}</div>
     `;
-
-    const img = card.querySelector('img');
-    img.onload = () => {
-      img.classList.add('loaded');
-      card.querySelector('.fallback').style.display = 'none';
-    };
-    img.onerror = () => { img.style.display = 'none'; };
-
     grid.appendChild(card);
   }
 }
 
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-document.getElementById('search').addEventListener('input', e => applyFilter(e.target.value));
+// This must be at the top level, outside any function
 grist.onRecords(render);
 </script>
 </body>
