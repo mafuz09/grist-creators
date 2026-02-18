@@ -84,6 +84,8 @@
 <div id="grid" class="grid"></div>
 
 <script>
+console.log('[Gallery] Widget script starting');
+
 grist.ready({
   requiredAccess: 'read table',
   columns: [
@@ -92,6 +94,7 @@ grist.ready({
     {name: 'meta',  title: 'Subtitle',     type: 'Text', optional: true},
   ]
 });
+console.log('[Gallery] grist.ready() called');
 
 let allCards = [];
 let selectedRowId = null;
@@ -99,13 +102,16 @@ let currentToken = '';
 let currentBaseUrl = '';
 
 async function refreshToken() {
+  console.log('[Gallery] Refreshing access token...');
   const info = await grist.docApi.getAccessToken({readOnly: true});
   currentToken = info.token;
   currentBaseUrl = info.baseUrl;
+  console.log('[Gallery] Token refreshed. baseUrl:', currentBaseUrl);
 }
 
 grist.onRecord((record) => {
   if (!record) return;
+  console.log('[Gallery] onRecord fired, rowId:', record.id);
   selectedRowId = record.id;
   document.querySelectorAll('.card').forEach(c =>
     c.classList.toggle('selected', +c.dataset.rowId === selectedRowId)
@@ -113,23 +119,33 @@ grist.onRecord((record) => {
 });
 
 async function render(records) {
+  console.log('[Gallery] onRecords fired, count:', records?.length);
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
   allCards = [];
 
   if (!records?.length) {
+    console.warn('[Gallery] No records received');
     grid.innerHTML = '<div class="empty"><div class="icon">👥</div>No records found.</div>';
     document.getElementById('count').textContent = '';
     return;
   }
 
+  // Log first raw record to inspect column names
+  console.log('[Gallery] First raw record keys:', Object.keys(records[0]));
+  console.log('[Gallery] First raw record sample:', JSON.stringify(records[0]));
+
   const seen = new Set();
+  let skippedNoMap = 0;
+  let skippedNoPhoto = 0;
+
   for (const r of records) {
     if (seen.has(r.id)) continue;
     seen.add(r.id);
     const row = grist.mapColumnNames(r);
-    if (!row) continue;
+    if (!row) { skippedNoMap++; continue; }
     const attachIds = Array.isArray(row.photo) ? row.photo : [];
+    if (!attachIds.length) skippedNoPhoto++;
     allCards.push({
       rowId: r.id,
       name: row.name != null ? String(row.name) : '',
@@ -138,10 +154,16 @@ async function render(records) {
     });
   }
 
+  console.log(`[Gallery] Mapped: ${allCards.length} cards | skipped (no mapping): ${skippedNoMap} | skipped (no photo): ${skippedNoPhoto}`);
+  if (allCards.length > 0) {
+    console.log('[Gallery] Sample card:', allCards[0]);
+  }
+
   applyFilter(document.getElementById('search').value);
 }
 
 function applyFilter(query) {
+  console.log('[Gallery] applyFilter called, query:', JSON.stringify(query));
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
   const q = query.trim().toLowerCase();
@@ -150,6 +172,8 @@ function applyFilter(query) {
         c.name.toLowerCase().includes(q) || c.meta.toLowerCase().includes(q)
       )
     : allCards;
+
+  console.log(`[Gallery] Filtered: ${filtered.length} of ${allCards.length}`);
 
   document.getElementById('count').textContent =
     filtered.length !== allCards.length
@@ -169,6 +193,7 @@ function applyFilter(query) {
     card.className = 'card' + (c.rowId === selectedRowId ? ' selected' : '');
     card.dataset.rowId = c.rowId;
     card.onclick = () => {
+      console.log('[Gallery] Card clicked, rowId:', c.rowId, 'name:', c.name);
       selectedRowId = c.rowId;
       document.querySelectorAll('.card').forEach(el =>
         el.classList.toggle('selected', +el.dataset.rowId === c.rowId)
@@ -189,40 +214,70 @@ function applyFilter(query) {
     `;
 
     if (c.attachIds.length) {
-      imgQueue.push({img: card.querySelector('img'), attachId: c.attachIds[0]});
+      imgQueue.push({img: card.querySelector('img'), attachId: c.attachIds[0], name: c.name});
     }
 
     frag.appendChild(card);
   }
 
   grid.appendChild(frag);
+  console.log(`[Gallery] DOM rendered. Starting batched image load for ${imgQueue.length} images...`);
 
-  // Load images with concurrency limit to avoid Grist's 10-request cap
   loadImagesBatched(imgQueue, 6);
 }
 
 async function loadImagesBatched(queue, batchSize) {
+  console.log(`[Gallery] loadImagesBatched: ${queue.length} images, batchSize: ${batchSize}`);
   await refreshToken();
+
+  let loaded = 0;
+  let failed = 0;
+
   for (let i = 0; i < queue.length; i += batchSize) {
     const batch = queue.slice(i, i + batchSize);
-    await Promise.all(batch.map(({img, attachId}) => loadOneImage(img, attachId)));
+    console.log(`[Gallery] Loading batch ${Math.floor(i/batchSize) + 1}: items ${i+1}–${Math.min(i+batchSize, queue.length)}`);
+    const results = await Promise.all(batch.map(({img, attachId, name}) =>
+      loadOneImage(img, attachId, name)
+    ));
+    results.forEach(r => r === 'ok' ? loaded++ : failed++);
+    console.log(`[Gallery] Batch done. Running total → loaded: ${loaded}, failed: ${failed}`);
   }
+
+  console.log(`[Gallery] All batches complete. Total loaded: ${loaded}, failed: ${failed}`);
 }
 
-async function loadOneImage(img, attachId, isRetry = false) {
+async function loadOneImage(img, attachId, name, isRetry = false) {
   return new Promise(async (resolve) => {
-    img.onload = () => { img.classList.add('loaded'); resolve(); };
+    const url = `${currentBaseUrl}/attachments/${attachId}/download?auth=${currentToken}`;
+    if (!isRetry) {
+      console.log(`[Gallery] Loading image for "${name}" | attachId: ${attachId}`);
+    } else {
+      console.log(`[Gallery] RETRY for "${name}" | attachId: ${attachId}`);
+    }
+
+    img.onload = () => {
+      console.log(`[Gallery] ✅ Loaded: "${name}"`);
+      img.classList.add('loaded');
+      resolve('ok');
+    };
     img.onerror = async () => {
       if (!isRetry) {
-        // Refresh token and retry once
+        console.warn(`[Gallery] ⚠️ Failed (will retry): "${name}" | attachId: ${attachId}`);
         try {
           await refreshToken();
-          await loadOneImage(img, attachId, true);
-        } catch { /* fallback stays */ }
+          const result = await loadOneImage(img, attachId, name, true);
+          resolve(result);
+        } catch (e) {
+          console.error(`[Gallery] ❌ Retry threw error for "${name}":`, e);
+          resolve('fail');
+        }
+      } else {
+        console.error(`[Gallery] ❌ Failed after retry: "${name}" | attachId: ${attachId}`);
+        resolve('fail');
       }
-      resolve();
     };
-    img.src = `${currentBaseUrl}/attachments/${attachId}/download?auth=${currentToken}`;
+
+    img.src = url;
   });
 }
 
@@ -232,8 +287,13 @@ function escHtml(s) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-document.getElementById('search').addEventListener('input', e => applyFilter(e.target.value));
+document.getElementById('search').addEventListener('input', e => {
+  console.log('[Gallery] Search input:', e.target.value);
+  applyFilter(e.target.value);
+});
+
 grist.onRecords(render);
+console.log('[Gallery] grist.onRecords handler registered');
 </script>
 </body>
 </html>
