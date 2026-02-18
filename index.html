@@ -88,6 +88,7 @@ console.log('[Gallery] Widget script starting');
 
 grist.ready({
   requiredAccess: 'read table',
+  allowSelectBy: true,  // ← add this
   columns: [
     {name: 'photo', title: 'Creator DP',   type: 'Attachments'},
     {name: 'name',  title: 'Creator Name', type: 'Text', optional: true},
